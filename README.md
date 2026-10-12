@@ -7,23 +7,51 @@ the code it analyzes.
 
 ## Requirements
 
-- Python 3.10 or newer, for the syntax the code uses. Only Python 3.14.8
-  has been tested. There are no third-party dependencies.
-- For `changes` only: Git 2.40.0 or newer on `PATH`. That release added
-  `git check-attr --source`, which reads a commit's filter attributes.
-  Older versions are refused up front, with exit code 2 and a message
-  naming the version found. `scan`, `graph` and `impact` do not use Git.
+| | Supported | Tested |
+|---|---|---|
+| Python | 3.10 or newer (`requires-python = ">=3.10"`) | 3.14.8 only |
+| Git, for `changes` only | 2.40.0 or newer | 2.54.0 only |
+
+- Python 3.10 is the oldest version the code's syntax allows; older
+  versions have not been run.
+- Git 2.40.0 added `git check-attr --source`, which `changes` uses to
+  read a commit's filter attributes. Older Git is refused up front, with
+  exit code 2 and a message naming the version found. `scan`, `graph`
+  and `impact` do not use Git.
+- There are no runtime dependencies.
+
+## Installation
+
+Install into a virtual environment, never into the system Python:
+
+    python3 -m venv .venv
+    .venv/bin/python -m pip install -e .
+
+This installs the `whatif` command into `.venv/bin`.
+- `-e` makes an editable install: the environment uses the source in
+  `src/`, so code changes take effect without reinstalling.
+- `.venv/bin/python -m pip install .` makes a regular install instead.
+
+Building needs one build-time package, `flit_core` (`>=3.12,<5`; small,
+with no dependencies). pip downloads it into a temporary build
+environment; it is not installed into `.venv`. Installing therefore
+needs access to PyPI, or a local copy of `flit_core`.
 
 ## Commands
 
-Activate the project's virtual environment, then run from the project root:
+With the environment activated (`source .venv/bin/activate`), or by
+calling `.venv/bin/whatif` directly:
 
-    PYTHONPATH=src python -m whatif_engine scan [PATH]
-    PYTHONPATH=src python -m whatif_engine graph [PATH]
-    PYTHONPATH=src python -m whatif_engine impact MODULE [PATH]
-    PYTHONPATH=src python -m whatif_engine changes [PATH] [--base REF] [--merge-base] [--no-untracked] [--allow-git-filters] [--json]
+    whatif scan [PATH]
+    whatif graph [PATH]
+    whatif impact MODULE [PATH]
+    whatif changes [PATH] [--base REF] [--merge-base] [--no-untracked] [--allow-git-filters] [--json]
 
-`PATH` defaults to the current directory.
+`PATH` defaults to the current directory, and `whatif` works from any
+directory.
+- `python -m whatif_engine ...` is equivalent to `whatif ...`.
+- Without installing, run `PYTHONPATH=src python -m whatif_engine ...`
+  from the repository root.
 
 - `scan` lists every Python file and its imports exactly as written,
   and reports files that cannot be parsed.
@@ -295,10 +323,22 @@ Change analysis has further limits:
 - Paths quoted inside graph warning messages are relative to `PATH`.
   Paths in the report's fields are relative to the repository root.
 
-## Tests
+## Development and testing
 
-    PYTHONPATH=src python -m unittest discover -s tests -v
+After the editable install, run the test suite from the repository root.
+It uses only the standard library's `unittest`:
 
-The Git tests create temporary repositories with `git` from `PATH`.
-`HOME`, global and system Git configuration are hidden from them. They
-are skipped if `git` is not installed.
+    .venv/bin/python -m unittest discover -s tests -v
+
+Without an install, `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v`
+runs the same suite. The packaging tests that need an installed
+`whatif-engine` or `whatif` command are then skipped, each with the
+reason.
+
+- **Git tests** create temporary repositories with `git` from `PATH`.
+  `HOME` and the global and system Git configuration are hidden from
+  them. They are skipped if `git` is not installed.
+- **Packaging tests** check the metadata in `pyproject.toml`, the
+  registered `whatif` entry point and the installed version. They also
+  run every command through the installed `whatif` from a temporary
+  directory outside the repository, without `PYTHONPATH`.
