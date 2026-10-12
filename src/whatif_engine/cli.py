@@ -57,7 +57,7 @@ def main() -> int:
         print("\n--- Summary ---")
         print(f"Python files scanned: {len(findings)}")
         print(f"Files with errors:    {errors}")
-        print("Note: imports are reported, not yet resolved into dependencies.")
+        print("Note: imports are listed as written; run `graph` to resolve local dependencies.")
 
         return 1 if errors else 0
 
@@ -67,9 +67,16 @@ def main() -> int:
         parser.exit(2, f"whatif: error: {exc}\n")
 
     if graph.errors:
-        print("Warnings: some modules could not be analyzed.")
+        print("Errors: some modules could not be analyzed.")
         for module, error in sorted(graph.errors.items()):
             print(f"  {module}: {error}")
+        print()
+
+    if graph.warnings:
+        print("Warnings:")
+        for module, messages in sorted(graph.warnings.items()):
+            for message in messages:
+                print(f"  {module}: {message}")
         print()
 
     if args.command == "graph":
@@ -81,7 +88,10 @@ def main() -> int:
 
             if dependencies:
                 for dependency in dependencies:
-                    print(f"  -> {dependency}")
+                    if graph.parent_packages.get(module) == dependency:
+                        print(f"  -> {dependency} (parent package initializer)")
+                    else:
+                        print(f"  -> {dependency}")
             else:
                 print("  -> (no local dependencies)")
 
@@ -92,6 +102,7 @@ def main() -> int:
         print(f"Modules discovered: {len(graph.modules)}")
         print(f"Local dependency edges: {edge_count}")
         print(f"Modules with errors: {len(graph.errors)}")
+        print(f"Modules with warnings: {len(graph.warnings)}")
         print("External packages and dynamic imports are not fully resolved.")
 
         return 1 if graph.errors else 0
@@ -114,10 +125,17 @@ def main() -> int:
     if not impact:
         print("  No local dependents found.")
 
+    if graph.errors:
+        # A module that failed to parse may depend on the target.
+        print(
+            f"\nResult may be incomplete: {len(graph.errors)} module(s) "
+            "could not be analyzed, so their dependencies are unknown."
+        )
+
     print("\nNote: this is static analysis, not proof of runtime impact.")
     print("Review warnings and test results before changing code.")
 
-    return 0
+    return 1 if graph.errors else 0
 
 
 if __name__ == "__main__":
