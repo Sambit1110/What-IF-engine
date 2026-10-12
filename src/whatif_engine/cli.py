@@ -4,7 +4,10 @@ import argparse
 from pathlib import Path
 
 from whatif_engine.analyzer import scan_project
+from whatif_engine.changes import analyze_changes
+from whatif_engine.gitrepo import GitError
 from whatif_engine.graph import build_dependency_graph, calculate_impact
+from whatif_engine.report import format_json, format_text
 
 
 def main() -> int:
@@ -32,7 +35,60 @@ def main() -> int:
     impact_parser.add_argument("target", help="Module name, e.g. whatif_engine.analyzer")
     impact_parser.add_argument("path", nargs="?", default=".")
 
+    changes_parser = commands.add_parser(
+        "changes",
+        help="Predict the impact of working-tree changes against a commit.",
+        description=(
+            "Compare the working tree (including staged edits) with a base "
+            "commit, then predict which modules and tests are affected."
+        ),
+    )
+    changes_parser.add_argument("path", nargs="?", default=".")
+    changes_parser.add_argument(
+        "--base", metavar="REF",
+        help="commit to compare against (default: HEAD)",
+    )
+    changes_parser.add_argument(
+        "--merge-base", action="store_true",
+        help="compare against the merge base of HEAD and --base, "
+             "i.e. only this branch's changes",
+    )
+    changes_parser.add_argument(
+        "--no-untracked", action="store_true",
+        help="ignore untracked files entirely",
+    )
+    changes_parser.add_argument(
+        "--allow-git-filters", action="store_true",
+        help="let Git run configured clean/process filter commands while "
+             "comparing files (refused by default)",
+    )
+    changes_parser.add_argument(
+        "--json", action="store_true",
+        help="print a JSON report on stdout; diagnostics go to stderr",
+    )
+
     args = parser.parse_args()
+
+    if args.command == "changes":
+        if args.merge_base and args.base is None:
+            parser.error("--merge-base requires --base")
+
+        try:
+            report = analyze_changes(
+                Path(args.path),
+                base=args.base or "HEAD",
+                merge_base=args.merge_base,
+                include_untracked=not args.no_untracked,
+                allow_git_filters=args.allow_git_filters,
+            )
+        # ValueError: Git output that could not be parsed.
+        except (GitError, OSError, ValueError) as exc:
+            parser.exit(2, f"whatif: error: {exc}\n")
+
+        formatter = format_json if args.json else format_text
+        print(formatter(report), end="")
+
+        return 0 if report.complete else 1
 
     if args.command == "scan":
         try:
