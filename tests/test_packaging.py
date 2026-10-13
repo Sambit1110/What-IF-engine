@@ -75,10 +75,26 @@ class TestProjectMetadata(unittest.TestCase):
 
     def test_distribution_metadata(self):
         self.assertEqual(self.project["name"], DISTRIBUTION)
-        self.assertEqual(self.project["requires-python"], ">=3.10")
+        # Python 3.10 reached end of life on 2026-10-01, and the test
+        # suite itself needs tomllib (3.11+).
+        self.assertEqual(self.project["requires-python"], ">=3.11")
         self.assertEqual(self.project["readme"], "README.md")
         self.assertTrue((ROOT / "README.md").is_file())
         self.assertTrue(self.project["description"])
+
+    def test_license_is_mit(self):
+        self.assertEqual(self.project["license"], "MIT")
+        self.assertEqual(self.project["license-files"], ["LICENSE"])
+
+        license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        self.assertTrue(license_text.startswith("MIT License\n"))
+        self.assertIn("Copyright (c) 2026 Sambit Biswas\n", license_text)
+        self.assertIn('THE SOFTWARE IS PROVIDED "AS IS"', license_text)
+
+    def test_no_invented_identity_or_urls(self):
+        # Only the owner adds these, with real values.
+        for field in ("authors", "maintainers", "urls"):
+            self.assertNotIn(field, self.project)
 
     def test_no_runtime_dependencies(self):
         self.assertEqual(self.project["dependencies"], [])
@@ -105,6 +121,46 @@ class TestProjectMetadata(unittest.TestCase):
         self.assertTrue(callable(getattr(importlib.import_module(module_name), attribute)))
 
 
+class TestContinuousIntegration(unittest.TestCase):
+    """Safety and consistency properties of the GitHub Actions workflow."""
+
+    def setUp(self):
+        self.workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+    def test_permissions_are_read_only(self):
+        self.assertRegex(self.workflow, r"(?m)^permissions:\n  contents: read\n")
+        self.assertNotRegex(self.workflow, r"(?m):\s*write\b")
+
+    def test_actions_are_official_and_pinned_to_full_commit_shas(self):
+        uses = re.findall(r"(?m)^\s*-?\s*uses:\s*(\S+)", self.workflow)
+        self.assertTrue(uses)
+        for action in uses:
+            with self.subTest(action=action):
+                self.assertRegex(action, r"^actions/[a-z-]+@[0-9a-f]{40}$")
+
+    def test_checkout_does_not_persist_credentials(self):
+        self.assertIn("persist-credentials: false", self.workflow)
+
+    def test_matrix_starts_at_the_supported_minimum(self):
+        minimum = load_pyproject()["project"]["requires-python"].removeprefix(">=")
+        versions = re.findall(r'"(3\.\d+)"', self.workflow)
+        self.assertEqual(min(versions, key=lambda v: tuple(map(int, v.split(".")))), minimum)
+        for version in ("3.11", "3.12", "3.13", "3.14"):
+            self.assertIn(f'"{version}"', self.workflow)
+        self.assertIn("macos-latest", self.workflow)
+        self.assertIn("ubuntu-latest", self.workflow)
+
+    def test_regular_install_full_suite_and_cli_smoke_test(self):
+        self.assertIn("-m pip install .\n", self.workflow)
+        self.assertNotIn("pip install -e", self.workflow)
+        self.assertIn("-m unittest discover -s tests -v", self.workflow)
+        self.assertIn("working-directory: ${{ runner.temp }}", self.workflow)
+        for command in ("--help", "scan", "graph", "impact", "changes"):
+            self.assertRegex(self.workflow, rf"/whatif\" {re.escape(command)}")
+
+
 @unittest.skipUnless(
     installed_distribution(),
     f"{DISTRIBUTION} is not installed; run `python -m pip install -e .`",
@@ -121,8 +177,13 @@ class TestInstalledDistribution(unittest.TestCase):
     def test_installed_metadata_declares_no_dependencies(self):
         self.assertIsNone(installed_distribution().requires)
         self.assertEqual(
-            installed_distribution().metadata["Requires-Python"], ">=3.10"
+            installed_distribution().metadata["Requires-Python"], ">=3.11"
         )
+
+    def test_installed_metadata_carries_the_license(self):
+        meta = installed_distribution().metadata
+        self.assertEqual(meta["License-Expression"], "MIT")
+        self.assertEqual(meta.get_all("License-File"), ["LICENSE"])
 
     def test_editable_install_points_at_this_source_tree(self):
         direct_url = installed_distribution().read_text("direct_url.json")

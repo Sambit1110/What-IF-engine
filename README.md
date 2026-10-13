@@ -7,13 +7,19 @@ the code it analyzes.
 
 ## Requirements
 
-| | Supported | Tested |
-|---|---|---|
-| Python | 3.10 or newer (`requires-python = ">=3.10"`) | 3.14.8 only |
-| Git, for `changes` only | 2.40.0 or newer | 2.54.0 only |
+| | Supported | Tested locally | In CI |
+|---|---|---|---|
+| Python | 3.11 or newer (`requires-python = ">=3.11"`) | 3.14.8 | 3.11, 3.12, 3.13, 3.14 on Ubuntu; 3.14 on macOS |
+| Operating system | Linux and macOS | macOS | Ubuntu and macOS |
+| Git, for `changes` only | 2.40.0 or newer | 2.54.0 | the runner's Git |
 
-- Python 3.10 is the oldest version the code's syntax allows; older
-  versions have not been run.
+- **CI:** the workflow in `.github/workflows/ci.yml` runs on every push
+  and pull request. It has not run yet, because the repository has not
+  been pushed anywhere.
+- **Windows** is untested and not supported for now. The test suite
+  relies on POSIX shell scripts, named pipes and symlinks.
+- **Python 3.10** reached end of life on 2026-10-01, and the test suite
+  uses `tomllib` (3.11+), so 3.11 is the minimum.
 - Git 2.40.0 added `git check-attr --source`, which `changes` uses to
   read a commit's filter attributes. Older Git is refused up front, with
   exit code 2 and a message naming the version found. `scan`, `graph`
@@ -339,6 +345,26 @@ reason.
   `HOME` and the global and system Git configuration are hidden from
   them. They are skipped if `git` is not installed.
 - **Packaging tests** check the metadata in `pyproject.toml`, the
-  registered `whatif` entry point and the installed version. They also
-  run every command through the installed `whatif` from a temporary
-  directory outside the repository, without `PYTHONPATH`.
+  license, the registered `whatif` entry point and the installed
+  version. They also run every command through the installed `whatif`
+  from a temporary directory outside the repository, without
+  `PYTHONPATH`. They also check the CI workflow's safety settings.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on Python 3.11–3.14 on Ubuntu and on
+Python 3.14 on macOS. Each job:
+1. makes a regular (non-editable) install into a fresh virtual
+   environment, so packaging mistakes surface
+2. runs the full test suite
+3. runs `whatif --help`, `scan`, `graph`, `impact` and `changes --json`
+   from outside the repository
+
+The workflow's token is read-only, and checkout credentials are not
+kept. It uses only the official `actions/checkout` and
+`actions/setup-python`, each pinned to a full commit SHA. Installing
+downloads the build-time `flit_core` from PyPI, as a local install does.
+
+## License
+
+WhatIf Engine is released under the MIT License. See [LICENSE](LICENSE).

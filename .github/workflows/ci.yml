@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Read-only token: the workflow only checks out and tests the code.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Runs steps with `bash -eo pipefail`, so a failing pipe fails the step.
+    shell: bash
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python-version: "3.14"
+
+    steps:
+      # Official actions pinned to full commit SHAs (tag in the comment).
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show tool versions
+        run: |
+          python --version
+          git --version
+
+      - name: Install (regular install, so packaging mistakes surface)
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install .
+
+      - name: Run the test suite
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" -m unittest discover -s tests -v
+
+      - name: Smoke-test the installed whatif command outside the repository
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$RUNNER_TEMP/venv/bin/whatif" --help
+          "$RUNNER_TEMP/venv/bin/whatif" scan "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/venv/bin/whatif" graph "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/venv/bin/whatif" impact whatif_engine.graph "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/venv/bin/whatif" changes "$GITHUB_WORKSPACE" --json \
+            | "$RUNNER_TEMP/venv/bin/python" -m json.tool > /dev/null
